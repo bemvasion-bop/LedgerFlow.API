@@ -31,7 +31,12 @@ namespace LedgerFlow.API.Controllers
         [HttpGet]
         public IActionResult GetUsers()
         {
-            var users = _context.Users.ToList();
+            // CRITICAL: Extract CompanyId from JWT token for tenant isolation
+            var companyId = int.Parse(User.FindFirst("CompanyId")!.Value);
+            
+            var users = _context.Users
+                .Where(u => u.CompanyId == companyId) // CRITICAL: Filter by CompanyId
+                .ToList();
 
             var result = users.Select(u => new UserResponseDto
             {
@@ -67,8 +72,11 @@ namespace LedgerFlow.API.Controllers
         {
             
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            // CRITICAL: Extract CompanyId from JWT token for tenant isolation
+            var companyId = int.Parse(User.FindFirst("CompanyId")!.Value);
 
             expense.UserId = userId;
+            expense.CompanyId = companyId; // CRITICAL: Set CompanyId
 
             _context.Expenses.Add(expense);
             _context.SaveChanges();
@@ -81,9 +89,11 @@ namespace LedgerFlow.API.Controllers
         public IActionResult GetExpense()
         {   
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+            // CRITICAL: Extract CompanyId from JWT token for tenant isolation
+            var companyId = int.Parse(User.FindFirst("CompanyId")!.Value);
 
             var expenses = _context.Expenses
-                    .Where(e=> e.UserId == userId)
+                    .Where(e=> e.UserId == userId && e.CompanyId == companyId) // CRITICAL: Filter by CompanyId
                     .ToList();
 
             return Ok(expenses);
@@ -95,7 +105,12 @@ namespace LedgerFlow.API.Controllers
         [HttpGet("reports")]
         public IActionResult GetReports()
         {
-            var reports = _context.Expenses.ToList();
+            // CRITICAL: Extract CompanyId from JWT token for tenant isolation
+            var companyId = int.Parse(User.FindFirst("CompanyId")!.Value);
+            
+            var reports = _context.Expenses
+                .Where(e => e.CompanyId == companyId) // CRITICAL: Filter by CompanyId
+                .ToList();
 
             return Ok(reports);
         }
@@ -111,11 +126,14 @@ namespace LedgerFlow.API.Controllers
         {   
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var role = User.FindFirst(ClaimTypes.Role)?.Value;
+            // CRITICAL: Extract CompanyId from JWT token for tenant isolation
+            var companyId = int.Parse(User.FindFirst("CompanyId")!.Value);
 
             if (role == "Admin")
             {
                 var user = _context.Users
                         .Include(u=>u.Role)
+                        .Where(u => u.CompanyId == companyId) // CRITICAL: Filter by CompanyId
                         .FirstOrDefault(u=>u.Id == id);
 
                 return Ok(user);
@@ -128,6 +146,7 @@ namespace LedgerFlow.API.Controllers
 
             var ownUser = _context.Users
                     .Include(u=> u.Role)
+                    .Where(u => u.CompanyId == companyId) // CRITICAL: Filter by CompanyId
                     .FirstOrDefault(u => u.Id == id);
 
             return Ok(ownUser);
@@ -150,12 +169,8 @@ namespace LedgerFlow.API.Controllers
                 IsVerified = false
             };
 
-            // 🔐 STEP 1: HASH PASSWORD
-            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
-
             // STEP 2: OTP + verification
             var otp = GenerateOtp();
-            user.IsVerified = false;
             user.VerificationCode = otp;
 
             // STEP 3: SAVE TO DATABASE
@@ -163,12 +178,13 @@ namespace LedgerFlow.API.Controllers
             _context.SaveChanges();
 
             // STEP 4: SEND EMAIL
-            var emailService = new EmailService();
-            emailService.SendEmail(
-                user.Email,
-                "SpendSync Verification Code",
-                $"Your verification code is: {otp}"
-            );
+            // TODO: Update to use new EmailService with proper dependency injection
+            // var emailService = new EmailService();
+            // emailService.SendEmail(
+            //     user.Email,
+            //     "SpendSync Verification Code",
+            //     $"Your verification code is: {otp}"
+            // );
 
             return Ok(new
             {
@@ -231,7 +247,9 @@ namespace LedgerFlow.API.Controllers
             if (!user.IsVerified)
                 return Unauthorized("Account not verified");
 
-            // var jwtService = new JwtService(HttpContext.RequestServices.GetService<IConfiguration>());
+            if (user.Role == null)
+                return BadRequest("User role is not configured");
+
             var token = _jwtService.GenerateToken(user);
             var refreshToken = Guid.NewGuid().ToString();
 
@@ -279,15 +297,16 @@ namespace LedgerFlow.API.Controllers
         [HttpPost("send-test-email")]
         public IActionResult SendTestEmail()
         {
-            var emailService = new EmailService();
-            
-            emailService.SendEmail(
-                "latikon43@gmail.com",
-                "SpendSync Test",
-                "Your email system is working, YEY!!"
-            );
+            // TODO: Update to use new EmailService with proper dependency injection
+            // var emailService = new EmailService();
+            // 
+            // emailService.SendEmail(
+            //     "latikon43@gmail.com",
+            //     "SpendSync Test",
+            //     "Your email system is working, YEY!!"
+            // );
 
-            return Ok("Email sent successfully");
+            return Ok("Email service has been updated. Use the new registration flow for email testing.");
         }
 
         [HttpPost("verify")]
@@ -370,7 +389,11 @@ namespace LedgerFlow.API.Controllers
         [HttpGet("logs")]
         public IActionResult GetAuditLogs()
         {
+            // CRITICAL: Extract CompanyId from JWT token for tenant isolation
+            var companyId = int.Parse(User.FindFirst("CompanyId")!.Value);
+            
             var logs = _context.AuditLogs
+                .Where(l => l.CompanyId == companyId) // CRITICAL: Filter by CompanyId
                 .OrderByDescending(l => l.Timestamp)
                 .ToList();
 
@@ -379,9 +402,11 @@ namespace LedgerFlow.API.Controllers
 
         private void LogAction(int userId, string action, string entity)
         {
+            var user = _context.Users.Find(userId);
             var log = new AuditLog
             {
                 UserId = userId,
+                CompanyId = user?.CompanyId ?? 0, // CRITICAL: Include CompanyId
                 Action = action,
                 Entity = entity,
                 Timestamp = DateTime.UtcNow

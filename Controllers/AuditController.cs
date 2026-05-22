@@ -1,60 +1,173 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using LedgerFlow.API.Data;
-using LedgerFlow.API.Models;
+using LedgerFlow.API.Services;
+using System.Security.Claims;
 
 namespace LedgerFlow.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/auditlogs")]
     public class AuditController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly AuditLogService _auditLogService;
 
-        public AuditController(AppDbContext context)
+        public AuditController(AuditLogService auditLogService)
         {
-            _context = context;
+            _auditLogService = auditLogService;
         }
 
-        // 🔍 GET: api/audit
-        // Only Admin can view logs
-        [Authorize(Roles = "Audit")]
+        // Helper to get user context
+        private (int UserId, int CompanyId) GetUserContext()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            var companyIdClaim = User.FindFirst("CompanyId");
+
+            if (userIdClaim == null || companyIdClaim == null)
+                throw new UnauthorizedAccessException("User context not found");
+
+            return (int.Parse(userIdClaim.Value), int.Parse(companyIdClaim.Value));
+        }
+
+        /// <summary>
+        /// Get audit logs with filtering and pagination (Admin and Audit roles)
+        /// </summary>
+        [Authorize(Roles = "Admin,Audit")]
         [HttpGet]
-        public IActionResult GetAuditLogs()
+        public async Task<IActionResult> GetAuditLogs(
+            [FromQuery] int? userId = null,
+            [FromQuery] string? action = null,
+            [FromQuery] string? entity = null,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20)
         {
-            var logs = _context.AuditLogs
-                .OrderByDescending(a => a.Timestamp) // latest first
-                .ToList();
+            try
+            {
+                var (currentUserId, companyId) = GetUserContext();
 
-            return Ok(logs);
+                // Get logs for the user's company (tenant isolation)
+                var (logs, total) = await _auditLogService.GetCompanyAuditLogsAsync(
+                    companyId,
+                    userId,
+                    action,
+                    entity,
+                    startDate,
+                    endDate,
+                    pageNumber,
+                    pageSize
+                );
+
+                return Ok(new
+                {
+                    data = logs,
+                    total = total,
+                    page = pageNumber,
+                    pageSize = pageSize,
+                    totalPages = (int)Math.Ceiling(total / (double)pageSize)
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
         }
 
-        // 🔍 GET: api/audit/user/1
-        // View logs for specific user
-        [Authorize(Roles = "Audit")]
-        [HttpGet("user/{userId}")]
-        public IActionResult GetLogsByUser(int userId)
+        /// <summary>
+        /// Get audit statistics for the company
+        /// </summary>
+        [Authorize(Roles = "Admin,Audit")]
+        [HttpGet("stats")]
+        public async Task<IActionResult> GetAuditStats()
         {
-            var logs = _context.AuditLogs
-                .Where(a => a.UserId == userId)
-                .OrderByDescending(a => a.Timestamp)
-                .ToList();
-
-            return Ok(logs);
+            try
+            {
+                var (userId, companyId) = GetUserContext();
+                var stats = await _auditLogService.GetAuditStatsAsync(companyId);
+                return Ok(stats);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
         }
 
-        // 🔍 GET: api/audit/action/CREATE
-        // Filter by action
-        [Authorize(Roles = "Audit")]
+        /// <summary>
+        /// Get audit logs for a specific user
+        /// </summary>
+        [Authorize(Roles = "Admin,Audit")]
+        [HttpGet("user/{targetUserId}")]
+        public async Task<IActionResult> GetLogsByUser(
+            int targetUserId,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            try
+            {
+                var (currentUserId, companyId) = GetUserContext();
+
+                var (logs, total) = await _auditLogService.GetCompanyAuditLogsAsync(
+                    companyId,
+                    targetUserId,
+                    null,
+                    null,
+                    null,
+                    null,
+                    pageNumber,
+                    pageSize
+                );
+
+                return Ok(new
+                {
+                    data = logs,
+                    total = total,
+                    page = pageNumber,
+                    pageSize = pageSize
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Get audit logs for a specific action
+        /// </summary>
+        [Authorize(Roles = "Admin,Audit")]
         [HttpGet("action/{action}")]
-        public IActionResult GetLogsByAction(string action)
+        public async Task<IActionResult> GetLogsByAction(
+            string action,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 20)
         {
-            var logs = _context.AuditLogs
-                .Where(a => a.Action == action)
-                .OrderByDescending(a => a.Timestamp)
-                .ToList();
+            try
+            {
+                var (userId, companyId) = GetUserContext();
 
-            return Ok(logs);
+                var (logs, total) = await _auditLogService.GetCompanyAuditLogsAsync(
+                    companyId,
+                    null,
+                    action,
+                    null,
+                    null,
+                    null,
+                    pageNumber,
+                    pageSize
+                );
+
+                return Ok(new
+                {
+                    data = logs,
+                    total = total,
+                    page = pageNumber,
+                    pageSize = pageSize
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
         }
     }
 }

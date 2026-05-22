@@ -23,7 +23,7 @@ private readonly IConfiguration _config;
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Role, user.Role.RoleName),
+                new Claim(ClaimTypes.Role, user.Role.RoleName ?? "User" ) ,
                 new Claim("IsVerified", user.IsVerified.ToString())
                 
             };

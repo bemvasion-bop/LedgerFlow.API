@@ -1,6 +1,5 @@
-﻿namespace LedgerFlow.API
+﻿namespace LedgerFlow.API.DTOs
 {
-
     public class RegisterDto
     {
         public string FirstName { get; set; }
@@ -9,5 +8,4 @@
         public string Password { get; set; }
         public int RoleId { get; set; }
     }
-
 }

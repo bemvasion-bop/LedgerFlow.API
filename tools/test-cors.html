@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS Test - SpendSync</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #0a1929 0%, #0f2f47 100%);
+            color: #e0e0e0;
+        }
+        h1 {
+            color: #00d9d9;
+            text-align: center;
+        }
+        .test-section {
+            background: rgba(26, 77, 92, 0.5);
+            border: 1px solid rgba(0, 217, 217, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        button {
+            background: linear-gradient(135deg, #00d9d9 0%, #20c997 100%);
+            color: #0a1929;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 5px;
+        }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(0, 217, 217, 0.5);
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .success {
+            background: rgba(81, 207, 102, 0.2);
+            border: 1px solid rgba(81, 207, 102, 0.5);
+            color: #51cf66;
+        }
+        .error {
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid rgba(255, 107, 107, 0.5);
+            color: #ff8a8a;
+        }
+        .info {
+            background: rgba(0, 217, 217, 0.2);
+            border: 1px solid rgba(0, 217, 217, 0.5);
+            color: #00d9d9;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 2px solid rgba(0, 217, 217, 0.3);
+            border-radius: 8px;
+            background: rgba(26, 77, 92, 0.5);
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+            color: #00d9d9;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 SpendSync CORS Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Simple GET Request</h2>
+        <p>Tests if CORS allows basic GET requests from this origin.</p>
+        <button onclick="testSimpleGet()">Test GET /api/test</button>
+        <div id="result1"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Login Request (POST with Credentials)</h2>
+        <p>Tests if CORS allows POST requests with credentials.</p>
+        <label>Email:</label>
+        <input type="email" id="email" placeholder="user@company.com" value="admin@demo.com">
+        <label>Password:</label>
+        <input type="password" id="password" placeholder="password" value="password123">
+        <button onclick="testLogin()">Test POST /api/auth/login</button>
+        <div id="result2"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Preflight Request (OPTIONS)</h2>
+        <p>Tests if CORS handles preflight OPTIONS requests correctly.</p>
+        <button onclick="testPreflight()">Test OPTIONS /api/auth/login</button>
+        <div id="result3"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: Get Plans (Public Endpoint)</h2>
+        <p>Tests public endpoint without authentication.</p>
+        <button onclick="testGetPlans()">Test GET /api/superadmin/plans</button>
+        <div id="result4"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5256/api';
+
+        function showResult(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.className = `result ${type}`;
+            element.textContent = message;
+        }
+
+        async function testSimpleGet() {
+            showResult('result1', 'Testing...', 'info');
+            try {
+                const response = await fetch(`${API_BASE}/test`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.text();
+                    showResult('result1', 
+                        `✅ SUCCESS!\n\nStatus: ${response.status}\nResponse: ${data}\n\nCORS Headers:\n${formatHeaders(response.headers)}`,
+                        'success'
+                    );
+                } else {
+                    showResult('result1', 
+                        `❌ FAILED\n\nStatus: ${response.status}\nResponse: ${await response.text()}`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('result1', 
+                    `❌ CORS ERROR!\n\n${error.message}\n\nThis means CORS is blocking the request.`,
+                    'error'
+                );
+            }
+        }
+
+        async function testLogin() {
+            showResult('result2', 'Testing...', 'info');
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ email, password })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult('result2', 
+                        `✅ LOGIN SUCCESS!\n\nStatus: ${response.status}\nToken: ${data.token.substring(0, 50)}...\nUser: ${JSON.stringify(data.user, null, 2)}\n\nCORS Headers:\n${formatHeaders(response.headers)}`,
+                        'success'
+                    );
+                } else {
+                    const errorData = await response.json();
+                    showResult('result2', 
+                        `❌ LOGIN FAILED (Not CORS)\n\nStatus: ${response.status}\nMessage: ${errorData.message}\n\nNote: This is an authentication error, not CORS. CORS is working if you see this message.`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('result2', 
+                    `❌ CORS ERROR!\n\n${error.message}\n\nThis means CORS is blocking the request.`,
+                    'error'
+                );
+            }
+        }
+
+        async function testPreflight() {
+            showResult('result3', 'Testing...', 'info');
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Origin': window.location.origin,
+                        'Access-Control-Request-Method': 'POST',
+                        'Access-Control-Request-Headers': 'content-type'
+                    }
+                });
+
+                showResult('result3', 
+                    `✅ PREFLIGHT SUCCESS!\n\nStatus: ${response.status}\n\nCORS Headers:\n${formatHeaders(response.headers)}\n\nThis means the server accepts requests from this origin.`,
+                    'success'
+                );
+            } catch (error) {
+                showResult('result3', 
+                    `❌ PREFLIGHT FAILED!\n\n${error.message}\n\nCORS is not configured correctly.`,
+                    'error'
+                );
+            }
+        }
+
+        async function testGetPlans() {
+            showResult('result4', 'Testing...', 'info');
+            try {
+                const response = await fetch(`${API_BASE}/superadmin/plans`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult('result4', 
+                        `✅ SUCCESS!\n\nStatus: ${response.status}\nPlans: ${JSON.stringify(data, null, 2)}\n\nCORS Headers:\n${formatHeaders(response.headers)}`,
+                        'success'
+                    );
+                } else {
+                    showResult('result4', 
+                        `❌ FAILED\n\nStatus: ${response.status}\nResponse: ${await response.text()}`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('result4', 
+                    `❌ CORS ERROR!\n\n${error.message}`,
+                    'error'
+                );
+            }
+        }
+
+        function formatHeaders(headers) {
+            let result = '';
+            for (let [key, value] of headers.entries()) {
+                if (key.toLowerCase().includes('access-control') || key.toLowerCase().includes('content-type')) {
+                    result += `  ${key}: ${value}\n`;
+                }
+            }
+            return result || '  (No CORS headers found)';
+        }
+
+        // Show current origin
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Testing from origin:', window.location.origin);
+            console.log('Backend URL:', API_BASE);
+        });
+    </script>
+</body>
+</html>
